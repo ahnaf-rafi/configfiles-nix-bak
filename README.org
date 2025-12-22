@@ -1,0 +1,7 @@
+#+title: Ahnaf Rafi's configuration files
+#+author: Ahnaf Rafi
+
+* What is this?
+
+This repository contains my configuration files for NixOS (WIP) and nix-darwin
+(forthcoming WIP).
