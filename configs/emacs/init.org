@@ -1,0 +1,288 @@
+#+title: Emacs Configuration
+#+author: Ahnaf Rafi
+#+property: header-args:emacs-lisp  :tangle init.el
+#+startup: overview
+
+* How this configuration works.
+When ~init.org~ is changed and saved, its Emacs Lisp (~elisp~) source code
+blocks get tangled (written) ~elisp~ files.
+These source files are symlinked to ~$HOME/.emacs.d~ by ~nix~.
+The automatic tangling is done using a local hook; the end of ~init.org~ (see
+bottom of raw file) has the following comment block:
+#+begin_src org :tangle no
+# Local Variables:
+# eval: (add-hook 'after-save-hook #'org-babel-tangle nil t)
+# End:
+#+end_src
+
+* The early init file
+The first user file Emacs loads is ~early-init.el~; it gets loaded before the
+graphical user interface (GUI).
+I use ~early-init.el~ mainly to disable some GUI elements and to defer things
+like garbage collection.
+Comments in the source block explain the code.
+#+begin_src emacs-lisp :tangle early-init.el
+;;; early-init.el --- -*- lexical-binding: t; -*-
+
+;;; Code:
+
+;; Disable GUI elements I don't use.
+(menu-bar-mode -1)
+(tool-bar-mode -1)
+(scroll-bar-mode -1)
+
+;; Get rid of splash screen.
+(setq inhibit-splash-screen t)
+(setq inhibit-startup-echo-area-message user-login-name) ;; Read docstring.
+(setq inhibit-startup-screen t)
+(setq inhibit-startup-buffer-menu nil)
+(setq initial-scratch-message nil)
+(advice-add #'display-startup-echo-area-message :override #'ignore)
+
+;; Increase garbage collection threshold - has some performance benefit.
+(setq gc-cons-threshold (* 50 1024 1024)) ;; 50mb
+
+;; Useful for dealing with language servers using eglot.
+(setq read-process-output-max (* 1024 1024)) ;; 1mb
+
+;; Inhibit frame resize - has some performance benefit.
+(setq frame-inhibit-implied-resize t)
+
+;; Use y/n responses to yes/no prompts.
+(fset 'yes-or-no-p 'y-or-n-p)
+
+;; Native compilation settings
+(when (and (fboundp 'native-comp-available-p)
+           (native-comp-available-p))
+  ;; Suppress annoying native compilation warnings.
+  (setq native-comp-async-report-warnings-errors 'silent)
+  (setq native-comp-deferred-compilation t))
+
+;; Set driver options for native compilation if using MacOS.
+(when (eq system-type 'darwin)
+  (setq native-comp-driver-options '("-Wl,-w")))
+
+(provide 'early-init)
+;;; early-init.el ends here
+#+end_src
+
+* Main init file: header and some basics
+Henceforth, any tangled ~elisp~ code blocks goes into ~init.el~.
+When a block is not tangled, I will say so.
+Here are the first few lines of ~init.el~.
+#+begin_src emacs-lisp
+;;; init.el --- -*- lexical-binding: t; -*-
+
+;;; Code:
+
+;; Name and email.
+(setq user-full-name "Ahnaf Rafi")
+(setq user-mail-address "ahnaf.al.rafi@gmail.com")
+
+;; Set file for custom.el to use --- I use this for temporary customizations.
+(setq custom-file (expand-file-name "custom.el" user-emacs-directory))
+;; Load the custom file.
+(load custom-file 'noerror 'nomessage)
+
+;; Add user lisp directory to load path.
+(add-to-list 'load-path (expand-file-name "lisp" user-emacs-directory))
+
+;; Clipboard/kill-ring --- do not keep duplicates.
+(setq kill-do-not-save-duplicates t)
+
+;; Disable the alarm bell
+(setq ring-bell-function 'ignore)
+
+;; For mouse events
+(setq use-dialog-box nil)
+(setq use-file-dialog nil)
+
+;; Disable backups and lockfiles
+(setq make-backup-files nil)
+(setq create-lockfiles nil)
+
+;; Enable auto-saves
+(setq auto-save-default t)
+
+;; Auto-save transforms
+(setq auto-save-file-name-transforms
+      (list (list "\\`/[^/]*:\\([^/]*/\\)*\\([^/]*\\)\\'"
+                  ; Prefix tramp auto-saves to prevent conflicts
+                  (concat auto-save-list-file-prefix "tramp-\\2") t)
+            (list ".*" auto-save-list-file-prefix t)))
+#+end_src
+
+* ~use-package~
+~use-package~ can install missing packages for you, but will not do so by
+default.
+The following block first makes installation of missing packages default
+behavior.
+In ~use-package~ package calls, we can also defer loading of packages by passing
+a ~:defer t~ keyword argument.
+This block instead asks deferral to be the default and so, any package required
+on startup must be marked by a ~:demand t~ keyword argument.
+#+begin_src emacs-lisp
+(setq use-package-always-ensure t)
+(setq use-package-always-defer t)
+
+(require 'use-package)
+#+end_src
+
+* ~gcmh~
+#+begin_src emacs-lisp
+(use-package gcmh
+  :init
+  (setq gcmh-idle-delay 5)
+  (setq gcmh-high-cons-threshold (* 100 1024 1024))
+  (setq gcmh-verbose init-file-debug)
+  (gcmh-mode 1))
+#+end_src
+
+* ~exec-path-from-shell~
+#+begin_src emacs-lisp
+(use-package exec-path-from-shell
+  :init
+  (exec-path-from-shell-initialize))
+#+end_src
+
+* Visuals
+** Font
+I use the ~JuliaMono~ font.
+#+begin_src emacs-lisp
+(add-to-list 'default-frame-alist '(font . "JuliaMono-14.0"))
+(set-face-attribute 'default nil :font "JuliaMono-14.0")
+#+end_src
+
+** Icons with ~nerd-icons.el~
+#+begin_src emacs-lisp
+(use-package nerd-icons)
+#+end_src
+
+** Tweaks to defaults
+#+begin_src emacs-lisp
+;; Dealing with Xressources - i.e. don't bother, ignore.
+(setq inhibit-x-resources t)
+
+;; Cursor, tooltip and dialog box
+(when (fboundp 'blink-cursor-mode)
+  (blink-cursor-mode -1))
+(setq visible-cursor nil)
+(setq use-dialog-box nil)
+(setq x-gtk-use-system-tooltips nil)
+(when (fboundp 'tooltip-mode)
+  (tooltip-mode -1))
+#+end_src
+
+** Line numbers and fill-column indicator
+I like line numbers pretty much everywhere.
+#+begin_src emacs-lisp
+(setq display-line-numbers-type 'visual)
+(dolist (hook '(prog-mode-hook text-mode-hook))
+  (add-hook hook #'display-line-numbers-mode)
+  (add-hook hook #'display-fill-column-indicator-mode))
+#+end_src
+
+** Theme
+Let's define a variable that tells Emacs whether a dark or light theme will be
+used.
+#+begin_src emacs-lisp
+(defvar aar/use-dark-theme nil
+  "Use dark theme if `t' otherwise, use light theme")
+#+end_src
+I like [[https://protesilaos.com/emacs/modus-themes][Protesilaos Stavrou's Modus
+Themes]]; these are both great and built in to more recent versions of
+Emacs.
+The following snippet loads the a variant according to ~aar/use-dark-theme~.
+#+begin_src emacs-lisp
+  (mapc #'disable-theme custom-enabled-themes)
+  (require-theme 'modus-themes)
+  (setq modus-themes-org-blocks 'gray-background)
+    (setq modus-themes-disable-other-themes t)
+    ;; (setq doom-gruvbox-dark-variant "hard")
+
+    (if aar/use-dark-theme
+        (modus-themes-load-theme 'modus-vivendi-tinted)
+      (modus-themes-load-theme 'modus-operandi-tinted))
+#+end_src
+
+** ~hl-todo~
+This adds additional highlighting for TODO keywords.
+#+begin_src emacs-lisp
+(use-package hl-todo
+  :init
+  (dolist (hook '(prog-mode-hook tex-mode-hook markdown-mode-hook))
+    (add-hook hook #'hl-todo-mode))
+
+  ;; Stolen from doom-emacs: modules/ui/hl-todo/config.el
+  (setq hl-todo-highlight-punctuation ":")
+  (setq hl-todo-keyword-faces
+        '(;; For reminders to change or add something at a later date.
+          ("TODO" warning bold)
+          ;; For code (or code paths) that are broken, unimplemented, or slow,
+          ;; and may become bigger problems later.
+          ("FIXME" error bold)
+          ;; For code that needs to be revisited later, either to upstream it,
+          ;; improve it, or address non-critical issues.
+          ("REVIEW" font-lock-keyword-face bold)
+          ;; For code smells where questionable practices are used
+          ;; intentionally, and/or is likely to break in a future update.
+          ("HACK" font-lock-constant-face bold)
+          ;; For sections of code that just gotta go, and will be gone soon.
+          ;; Specifically, this means the code is deprecated, not necessarily
+          ;; the feature it enables.
+          ("DEPRECATED" font-lock-doc-face bold)
+          ;; Extra keywords commonly found in the wild, whose meaning may vary
+          ;; from project to project.
+          ("NOTE" success bold)
+          ("BUG" error bold)
+          ("XXX" font-lock-constant-face bold))))
+#+end_src
+
+* Keybindings
+** ~which-key~
+#+begin_src emacs-lisp
+(use-package which-key
+  :demand t
+  :init
+  (setq which-key-idle-delay 0.3)
+  (setq which-key-allow-evil-operators t)
+  (which-key-setup-minibuffer)
+  (which-key-mode))
+#+end_src
+
+** ~evil~
+#+begin_src emacs-lisp
+(use-package evil
+  :demand t
+  :init
+  (setq evil-want-integration t)
+  (setq evil-want-keybinding nil)
+  (setq evil-want-C-u-scroll t)
+  (setq evil-want-C-u-delete t)
+  (setq evil-want-C-i-jump nil)
+  (setq evil-want-visual-char-semi-exclusive t)
+  (setq evil-ex-search-vim-style-regexp t)
+  (setq evil-ex-visual-char-range t)
+  (setq evil-respect-visual-line-mode t)
+  (setq evil-mode-line-format 'nil)
+  (setq evil-symbol-word-search t)
+  (setq evil-ex-interactive-search-highlight 'selected-window)
+  (setq evil-kbd-macro-suppress-motion-error t)
+  (setq evil-split-window-below t)
+  (setq evil-vsplit-window-right t)
+  (setq evil-flash-timer nil)
+  (setq evil-complete-all-buffers nil)
+  (evil-mode 1)
+  (evil-set-initial-state 'messages-buffer-mode 'normal))
+#+end_src
+
+* Footer for init file
+#+BEGIN_SRC emacs-lisp
+(provide 'init)
+;;; init.el ends here
+#+END_SRC
+
+* Local variables
+# Local Variables:
+# eval: (add-hook 'after-save-hook #'org-babel-tangle nil t)
+# End:
