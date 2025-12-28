@@ -5,7 +5,7 @@
   imports = [
     ../nixpkgs
     ./host-flags.nix
-  ]
+  ];
 
   environment.systemPackages = with pkgs; [
     vim
@@ -16,7 +16,7 @@
     curl
     coreutils
     tree
-  ]
+  ];
 
   # Fonts
   fonts.packages = with pkgs; [
